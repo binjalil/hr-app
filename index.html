@@ -577,7 +577,12 @@ async function aAtt(box,re){
 async function aEmps(box,re){
   const q=(S.sub.q||'').trim();
   const list=S.profiles.filter(p=>!q||(p.full_name+' '+(p.phone||'')+' '+(p.employee_no||'')+' '+(p.national_id||'')).includes(q));
-  box.innerHTML=`<div class="alert info" style="margin-top:6px">لإضافة موظف: أرسل له رابط التطبيق ليسجل حساب، وبعدها يظهر هنا وتكمل بياناته (الفرع والوردية والراتب).</div>
+  const {data:invs}=await sb.from('employee_invites').select('*').order('full_name');S.invites=invs||[];
+  const il=S.invites.filter(p=>!q||(p.full_name+' '+(p.phone||'')+' '+(p.employee_no||'')+' '+(p.national_id||'')).includes(q));
+  box.innerHTML=`<div class="alert info" style="margin-top:6px">تقدر تضيف الموظف وتجهّز ملفه قبل ما يسجل، أو ترسل له رابط التطبيق يسجل بنفسه وتكمل بياناته بعدين.</div>
+   <button class="btn block" id="addinv" style="margin-top:10px">➕ إضافة موظف</button>
+   ${il.length?`<h2>بانتظار التسجيل (${il.length})</h2><div class="card list">${il.map(p=>`<div class="item" data-inv="${p.id}" style="cursor:pointer"><div class="main"><div class="t">${esc(p.full_name)}</div>
+     <div class="small muted">${esc(deptPath(p.department_id)||p.job_title||'')}${p.phone?` · <span dir="ltr">${esc(p.phone)}</span>`:''}</div></div><span class="pill p-mute">لم يسجل بعد</span></div>`).join('')}</div>`:''}
    <h2>الموظفين (${S.profiles.length})</h2><input id="sq" placeholder="بحث بالاسم أو الهوية أو الجوال" value="${esc(q)}">
    <div class="card list" style="margin-top:12px">${list.map(p=>`<div class="item" data-e="${p.id}" style="cursor:pointer"><div class="main">
      <div class="t">${esc(p.full_name)} ${!p.is_active?'<span class="pill p-mute">موقوف</span>':''}</div>
@@ -585,13 +590,15 @@ async function aEmps(box,re){
      ${!empBr(p).length||!empSh(p).length?'<span class="pill p-warn">غير مكتمل</span>':empAlerts(p).length?`<span class="pill ${empAlerts(p).some(a=>a.lvl!=='soon')?'p-bad':'p-warn'}">وثيقة تنتهي</span>`:`<span class="pill p-info">${ROLES[p.role]}</span>`}</div>`).join('')||'<div class="empty">ما فيه نتائج</div>'}</div>`;
   const sq=$('#sq');sq.oninput=()=>{S.sub.q=sq.value;clearTimeout(sq._t);sq._t=setTimeout(()=>{aEmps(box,re).then(()=>{const n=$('#sq');n.focus();n.setSelectionRange(n.value.length,n.value.length)})},250)};
   box.querySelectorAll('[data-e]').forEach(el=>el.onclick=()=>editEmp(S.profiles.find(p=>p.id===el.dataset.e),re));
+  $('#addinv').onclick=()=>editEmp({full_name:'',role:'employee',basic_salary:0,housing_allowance:0,transport_allowance:0,other_allowance:0,branch_ids:[],shift_ids:[]},re,true);
+  box.querySelectorAll('[data-inv]').forEach(el=>el.onclick=()=>editEmp(S.invites.find(p=>p.id===el.dataset.inv),re,true));
 }
-function editEmp(p,re){
+function editEmp(p,re,inv){const isNew=inv&&!p.id;
   const sel=(n,arr,v)=>`<select name="${n}">${opts(arr,v)}</select>`;
-  sheet(`<form id="ef" class="stack"><div class="row between"><h3>${esc(p.full_name)}</h3><span class="small muted" dir="ltr">${esc(p.national_id||'')}</span></div>
+  sheet(`<form id="ef" class="stack"><div class="row between"><h3>${isNew?'إضافة موظف قبل التسجيل':esc(p.full_name)}</h3><span class="small muted" dir="ltr">${esc(p.national_id||'')}</span></div>
     <div class="grid2"><label class="f">الاسم<input name="full_name" value="${esc(p.full_name)}" required></label><label class="f">الرقم الوظيفي<input name="employee_no" value="${esc(p.employee_no||'')}"></label>
     <label class="f">المسمى الوظيفي<input name="job_title" value="${esc(p.job_title||'')}"></label><label class="f">الجوال<input name="phone" value="${esc(p.phone||'')}" dir="ltr" inputmode="tel"></label>
-    <label class="f">رقم الهوية / الإقامة<input value="${esc(p.national_id||'')}" dir="ltr" disabled></label>
+    <label class="f">رقم الهوية / الإقامة<input ${inv?'name="national_id" required inputmode="numeric" placeholder="10 أرقام"':'disabled'} value="${esc(p.national_id||'')}" dir="ltr"></label>
     <label class="f">انتهاء الهوية / الإقامة<input type="date" name="id_expiry" value="${p.id_expiry||''}"></label>
     <label class="f">بداية العقد<input type="date" name="contract_start" value="${p.contract_start||''}"></label>
     <label class="f">نهاية العقد<input type="date" name="contract_end" value="${p.contract_end||''}"></label>
@@ -607,16 +614,46 @@ function editEmp(p,re){
     <div class="grid2"><label class="f">الأساسي<input type="number" step="0.01" name="basic_salary" value="${p.basic_salary}" inputmode="decimal"></label><label class="f">بدل السكن<input type="number" step="0.01" name="housing_allowance" value="${p.housing_allowance}" inputmode="decimal"></label>
     <label class="f">بدل النقل<input type="number" step="0.01" name="transport_allowance" value="${p.transport_allowance}" inputmode="decimal"></label><label class="f">بدلات أخرى<input type="number" step="0.01" name="other_allowance" value="${p.other_allowance}" inputmode="decimal"></label></div>
     <label class="row small"><input type="checkbox" name="is_saudi" ${p.is_saudi?'checked':''}> سعودي (يُخصم عليه التأمينات الاجتماعية)</label>
-    <label class="row small"><input type="checkbox" name="is_active" ${p.is_active?'checked':''}> الحساب نشط</label>
+    ${inv?'':`<label class="row small"><input type="checkbox" name="is_active" ${p.is_active?'checked':''}> الحساب نشط</label>`}
     <label class="row small"><input type="checkbox" name="presence_required" ${p.presence_required?'checked':''}> يشمله تأكيد التواجد (توصله طلبات تأكيد خلال الدوام)</label>
     <div class="row"><button class="btn" style="flex:1">حفظ</button><button type="button" class="btn ghost" id="ex">إغلاق</button></div>
-    ${p.id!==S.me.id?'<button type="button" class="btn ghost block" id="erst">إعادة تعيين كلمة المرور</button>':''}</form>`,
-  (el,close)=>{el.querySelector('#ex').onclick=close;el.querySelector('#erst')&&(el.querySelector('#erst').onclick=()=>{close();resetPw(p.id,re)});el.querySelector('#ef').onsubmit=async e=>{e.preventDefault();const f=form(e.target);
+    ${inv?(p.id?`<div class="alert info small">لم يسجل بعد. لما يسجل برقم هويته <b>وجواله</b> المكتوبين هنا، يرتبط بهذا الملف تلقائياً.</div>
+      <button type="button" class="btn ghost block" id="iwa">📲 إرسال رابط التطبيق على الواتساب</button>
+      <button type="button" class="btn ghost block" id="iacc">🔑 إنشاء الحساب الآن بكلمة مرور مؤقتة</button>
+      <button type="button" class="btn ghost block" id="idel" style="color:var(--bad)">حذف</button>`:''):(p.id!==S.me.id?'<button type="button" class="btn ghost block" id="erst">إعادة تعيين كلمة المرور</button>':'')}</form>`,
+  (el,close)=>{el.querySelector('#ex').onclick=close;el.querySelector('#erst')&&(el.querySelector('#erst').onclick=()=>{close();resetPw(p.id,re)});
+    el.querySelector('#iwa')&&(el.querySelector('#iwa').onclick=()=>inviteWA(p));
+    el.querySelector('#iacc')&&(el.querySelector('#iacc').onclick=()=>{close();inviteAccount(p,re)});
+    el.querySelector('#idel')&&(el.querySelector('#idel').onclick=async()=>{if(!confirm('حذف '+p.full_name+'؟'))return;const {error}=await sb.from('employee_invites').delete().eq('id',p.id);if(!fail(error)){close();toast('تم الحذف');re()}});el.querySelector('#ef').onsubmit=async e=>{e.preventDefault();const f=form(e.target);
     ['basic_salary','housing_allowance','transport_allowance','other_allowance'].forEach(k=>f[k]=Number(f[k]||0));
     f.branch_ids=[...el.querySelectorAll('[data-eb2]:checked')].map(c=>c.dataset.eb2);f.branch_id=f.branch_ids[0]||null;
     f.shift_ids=[...el.querySelectorAll('[data-es2]:checked')].map(c=>c.dataset.es2);f.shift_id=f.shift_ids[0]||null;
+    if(inv){f.national_id=normDigits(f.national_id);if(!/^[12]\d{9}$/.test(f.national_id))return toast('رقم الهوية أو الإقامة لازم يكون 10 أرقام ويبدأ بـ 1 أو 2','bad');
+      const ph=normPhone(f.phone);if(!ph)return toast('اكتب رقم جوال سعودي صحيح، مثل 0501234567','bad');f.phone='0'+ph.slice(3);
+      if(S.profiles.some(x=>x.national_id===f.national_id))return toast('رقم الهوية هذا مسجل من قبل في الموظفين','bad');
+      const {error}=p.id?await sb.from('employee_invites').update(f).eq('id',p.id):await sb.from('employee_invites').insert(f);
+      if(error&&/duplicate|unique/i.test(error.message))return toast('رقم الهوية هذا مضاف من قبل','bad');if(fail(error))return;close();toast(p.id?'تم الحفظ':'تمت إضافة الموظف، أرسل له رابط التطبيق');re();return}
     const {error}=await sb.from('profiles').update(f).eq('id',p.id);if(fail(error))return;close();toast('تم حفظ بيانات الموظف');if(p.id===S.me.id)await loadMe(p.id);re()}});
 }
+const APP_URL=()=>location.origin+location.pathname;
+function inviteWA(p){const ph=normPhone(p.phone);
+  const msg=`السلام عليكم ${p.full_name||''}،\nتم تجهيز ملفك في تطبيق الموارد البشرية لـ ${S.settings?.company_name||'الشركة'}.\n\n1) افتح الرابط وثبّت التطبيق على جوالك:\n${APP_URL()}\n2) اضغط «سجّل كموظف جديد»\n3) اكتب رقم هويتك ${p.national_id} وجوالك ${p.phone} واختر كلمة مرور\n\nبعدها تقدر تسجل حضورك مباشرة.`;
+  if(ph)window.open(`https://wa.me/${ph}?text=${encodeURIComponent(msg)}`,'_blank');else toast('رقم الجوال غير صحيح','bad')}
+function inviteAccount(p,re){
+  sheet(`<h3>إنشاء حساب ${esc(p.full_name)}</h3><p>بيتم إنشاء الحساب الحين بكلمة مرور مؤقتة، وترسلها له على الواتساب. أول ما يدخل، التطبيق يطلب منه يختار كلمة جديدة.</p>
+    <div class="row"><button class="btn" id="iaok" style="flex:1">إنشاء الحساب</button><button class="btn ghost" id="iax">إلغاء</button></div>`,
+  (el,close)=>{el.querySelector('#iax').onclick=close;
+    el.querySelector('#iaok').onclick=async e=>{e.target.disabled=true;const {data:pass,error}=await sb.rpc('hr_create_account',{p_invite:p.id});
+      if(fail(error)){e.target.disabled=false;return}
+      const ph=normPhone(p.phone);
+      const msg=`السلام عليكم ${p.full_name||''}،\nتم إنشاء حسابك في تطبيق الموارد البشرية.\n\nالرابط: ${APP_URL()}\nرقم الدخول: ${p.national_id}\nكلمة المرور المؤقتة: ${pass}\n\nثبّت التطبيق على جوالك وادخل، وبعدها بيطلب منك تختار كلمة مرور جديدة.`;
+      el.innerHTML=`<h3>تم إنشاء الحساب ✅</h3><p class="small muted" style="margin:0">كلمة المرور المؤقتة لـ ${esc(p.full_name)}</p>
+        <div class="num" style="font:700 30px var(--display);text-align:center;letter-spacing:3px;padding:16px;background:var(--surface-2);border-radius:12px;margin:12px 0;user-select:all" dir="ltr">${esc(pass)}</div>
+        <div class="stack">${ph?`<a class="btn block" style="text-align:center;text-decoration:none;background:#1f9d55" href="https://wa.me/${ph}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">إرسال على الواتساب</a>`:''}
+        <button class="btn ghost block" id="cpy">نسخ الرسالة</button><button class="btn ghost block" id="dn">تم</button></div>`;
+      el.querySelector('#cpy').onclick=async()=>{try{await navigator.clipboard.writeText(msg);toast('تم النسخ')}catch(_){toast('انسخ الكلمة يدوياً','bad')}};
+      el.querySelector('#dn').onclick=()=>{close();re()}}})}
+
 
 async function aPayroll(box,re){
   const ym=S.sub.pm||monthNow();const [y,m]=ym.split('-').map(Number);
