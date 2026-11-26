@@ -193,6 +193,13 @@ const pill=(map,k)=>{const v=map[k]||[k,'p-mute'];return `<span class="pill ${v[
 const isHR=()=>['hr','admin'].includes(S.me?.role);
 const isMgr=()=>S.me?.role==='manager';
 const nameOf=id=>S.profiles.find(p=>p.id===id)?.full_name||'—';
+/* الأقسام بالتسلسل: قسم رئيسي ← إدارة ← تخصص (بدون حد للمستويات) */
+const deptKids=pid=>S.departments.filter(d=>(d.parent_id||null)===(pid||null)).sort((a,b)=>a.name.localeCompare(b.name,'ar'));
+function deptTree(pid=null,depth=0,out=[]){for(const d of deptKids(pid)){out.push({...d,depth});deptTree(d.id,depth+1,out)}
+  if(pid===null){const seen=new Set(out.map(x=>x.id));S.departments.filter(d=>!seen.has(d.id)).forEach(d=>out.push({...d,depth:0}))}return out}
+function deptPath(id){const parts=[];let d=S.departments.find(x=>x.id===id),guard=0;while(d&&guard++<20){parts.unshift(d.name);d=S.departments.find(x=>x.id===d.parent_id)}return parts.join(' › ')}
+function deptDesc(id){const ids=[id];for(let i=0;i<ids.length;i++)S.departments.filter(d=>d.parent_id===ids[i]).forEach(d=>ids.push(d.id));return ids}
+const deptOpts=(sel,empty='— اختر —')=>`<option value="">${empty}</option>`+deptTree().map(d=>`<option value="${d.id}" ${d.id===sel?'selected':''}>${'\u00A0\u00A0\u00A0'.repeat(d.depth)}${d.depth?'↳ ':''}${esc(d.name)}</option>`).join('');
 
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind==='bad'?' bad':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),kind==='bad'?4500:2600)}
 function fail(error){if(error){toast(error.message||'حدث خطأ','bad');return true}return false}
@@ -544,9 +551,9 @@ async function aDash(box){
     <div class="stat"><b>${active.length}</b><span>موظف نشط</span></div>
     <div class="stat"><b>${S.branches.length}</b><span>فروع</span></div></div>
    <h2>الحضور آخر 7 أيام</h2><div class="card"><div class="bars">${days.map((d,i)=>`<div class="b"><em>${per[i]}</em><i style="height:${per[i]/max*80}%"></i><small>${DAYS[new Date(d+'T12:00:00Z').getUTCDay()].slice(0,3)}</small></div>`).join('')}</div></div>
-   <h2>لم يسجلوا حضور اليوم</h2><div class="card list">${notIn.length?notIn.map(x=>`<div class="item"><div class="main"><div class="t">${esc(x.p.full_name)}</div><div class="small muted">${esc(S.departments.find(d=>d.id===x.p.department_id)?.name||'')}</div></div>${x.p.phone?`<span class="small num" dir="ltr">${esc(x.p.phone)}</span>`:''}</div>`).join(''):'<div class="empty">الكل سجل حضوره 👏</div>'}</div>
+   <h2>لم يسجلوا حضور اليوم</h2><div class="card list">${notIn.length?notIn.map(x=>`<div class="item"><div class="main"><div class="t">${esc(x.p.full_name)}</div><div class="small muted">${esc(deptPath(x.p.department_id))}</div></div>${x.p.phone?`<span class="small num" dir="ltr">${esc(x.p.phone)}</span>`:''}</div>`).join(''):'<div class="empty">الكل سجل حضوره 👏</div>'}</div>
    ${lateL.length?`<h2>المتأخرين اليوم</h2><div class="card list">${lateL.map(x=>`<div class="item"><div class="t">${esc(x.p.full_name)}</div><span class="pill p-warn">${today.find(a=>a.employee_id===x.p.id).late_minutes} د</span></div>`).join('')}</div>`:''}
-   <h2>توزيع الموظفين على الأقسام</h2><div class="card list">${S.departments.length?S.departments.map(d=>`<div class="item"><span>${esc(d.name)}</span><b class="num">${active.filter(p=>p.department_id===d.id).length}</b></div>`).join(''):'<div class="empty">أضف الأقسام من الإعدادات</div>'}</div>`;
+   <h2>توزيع الموظفين على الأقسام</h2><div class="card list">${S.departments.length?deptTree().map(d=>{const ids=deptDesc(d.id);return `<div class="item" style="padding-inline-start:${d.depth*18}px"><span>${d.depth?'↳ ':''}${d.depth?esc(d.name):`<b>${esc(d.name)}</b>`}</span><b class="num">${active.filter(p=>ids.includes(p.department_id)).length}</b></div>`}).join(''):'<div class="empty">أضف الأقسام من الإعدادات</div>'}</div>`;
 }
 
 async function aAtt(box,re){
@@ -574,7 +581,7 @@ async function aEmps(box,re){
    <h2>الموظفين (${S.profiles.length})</h2><input id="sq" placeholder="بحث بالاسم أو الهوية أو الجوال" value="${esc(q)}">
    <div class="card list" style="margin-top:12px">${list.map(p=>`<div class="item" data-e="${p.id}" style="cursor:pointer"><div class="main">
      <div class="t">${esc(p.full_name)} ${!p.is_active?'<span class="pill p-mute">موقوف</span>':''}</div>
-     <div class="small muted">${esc(p.job_title||'')}${p.job_title?' · ':''}${esc(S.departments.find(d=>d.id===p.department_id)?.name||'بدون قسم')}</div></div>
+     <div class="small muted">${esc(p.job_title||'')}${p.job_title?' · ':''}${esc(deptPath(p.department_id)||'بدون قسم')}</div></div>
      ${!empBr(p).length||!empSh(p).length?'<span class="pill p-warn">غير مكتمل</span>':empAlerts(p).length?`<span class="pill ${empAlerts(p).some(a=>a.lvl!=='soon')?'p-bad':'p-warn'}">وثيقة تنتهي</span>`:`<span class="pill p-info">${ROLES[p.role]}</span>`}</div>`).join('')||'<div class="empty">ما فيه نتائج</div>'}</div>`;
   const sq=$('#sq');sq.oninput=()=>{S.sub.q=sq.value;clearTimeout(sq._t);sq._t=setTimeout(()=>{aEmps(box,re).then(()=>{const n=$('#sq');n.focus();n.setSelectionRange(n.value.length,n.value.length)})},250)};
   box.querySelectorAll('[data-e]').forEach(el=>el.onclick=()=>editEmp(S.profiles.find(p=>p.id===el.dataset.e),re));
@@ -590,7 +597,7 @@ function editEmp(p,re){
     <label class="f">نهاية العقد<input type="date" name="contract_end" value="${p.contract_end||''}"></label>
     <label class="f">انتهاء كرت العمل<input type="date" name="work_permit_expiry" value="${p.work_permit_expiry||''}"></label>
     <label class="f">انتهاء التأمين الطبي<input type="date" name="medical_insurance_expiry" value="${p.medical_insurance_expiry||''}"></label>
-    <label class="f">القسم${sel('department_id',S.departments,p.department_id)}</label><div class="f" style="grid-column:1/-1"><span>مواقع البصمة (اختر واحد أو أكثر)</span><div class="row small" style="gap:10px">${S.branches.map(b=>`<label class="row" style="gap:4px"><input type="checkbox" data-eb2="${b.id}" ${empBr(p).includes(b.id)?'checked':''}>${esc(b.name)}</label>`).join('')||'<span class="muted">أضف فرع من الإعدادات أولاً</span>'}</div></div>
+    <label class="f">القسم<select name="department_id">${deptOpts(p.department_id)}</select></label><div class="f" style="grid-column:1/-1"><span>مواقع البصمة (اختر واحد أو أكثر)</span><div class="row small" style="gap:10px">${S.branches.map(b=>`<label class="row" style="gap:4px"><input type="checkbox" data-eb2="${b.id}" ${empBr(p).includes(b.id)?'checked':''}>${esc(b.name)}</label>`).join('')||'<span class="muted">أضف فرع من الإعدادات أولاً</span>'}</div></div>
     <div class="f" style="grid-column:1/-1"><span>الورديات (اختر واحدة أو أكثر)</span><div class="row small" style="gap:10px">${S.shifts.map(s=>`<label class="row" style="gap:4px"><input type="checkbox" data-es2="${s.id}" ${empSh(p).includes(s.id)?'checked':''}>${esc(s.name)} <span class="muted num">${s.start_time.slice(0,5)}-${s.end_time.slice(0,5)}</span></label>`).join('')||'<span class="muted">أضف وردية من الإعدادات أولاً</span>'}</div></div><label class="f">المدير المباشر${sel('manager_id',S.profiles.filter(x=>x.id!==p.id),p.manager_id)}</label>
     <label class="f">الصلاحية<select name="role">${Object.entries(ROLES).map(([k,l])=>`<option value="${k}" ${p.role===k?'selected':''}>${l}</option>`).join('')}</select></label>
     <label class="f">تاريخ التعيين<input type="date" name="hire_date" value="${p.hire_date||''}"></label>
@@ -654,8 +661,11 @@ async function aSet(box,re){
    <div class="row small">${DAYS.map((d,i)=>`<label class="row" style="gap:4px"><input type="checkbox" data-wd="${i}" ${i<5?'checked':''}>${d}</label>`).join('')}</div>
    <button class="btn">إضافة الوردية</button></form>
 
-  <h2>الأقسام</h2><div class="card list">${S.departments.map(d=>`<div class="item"><span>${esc(d.name)}</span>${del('departments','id',d.id)}</div>`).join('')||'<div class="empty">ما فيه أقسام</div>'}</div>
-  <form id="df" class="row" style="margin-top:10px"><input name="name" required placeholder="اسم القسم" style="flex:1"><button class="btn">إضافة</button></form>
+  <h2>الأقسام</h2><p class="small muted" style="margin:-4px 0 8px">رتّبها بالتسلسل: قسم رئيسي (مثل المقاولات) ← إدارة (مثل الإدارة 11) ← تخصص (مثل السباكين). اضغط «+ فرعي» عشان تضيف قسم تحت قسم.</p>
+  <div class="card list">${deptTree().map(d=>`<div class="item" style="padding-inline-start:${d.depth*18}px"><span>${d.depth?'↳ ':''}${d.depth?esc(d.name):`<b>${esc(d.name)}</b>`} <span class="small muted num">(${S.profiles.filter(p=>deptDesc(d.id).includes(p.department_id)).length})</span></span><div class="row" style="flex-wrap:nowrap"><button class="btn ghost sm" style="white-space:nowrap" data-dsub="${d.id}">+ فرعي</button><button class="btn ghost sm" style="white-space:nowrap" data-dren="${d.id}">تعديل</button>${del('departments','id',d.id)}</div></div>`).join('')||'<div class="empty">ما فيه أقسام</div>'}</div>
+  <form id="df" class="card stack" style="margin-top:10px"><b>إضافة قسم</b>
+   <label class="f">تابع لـ<select name="parent_id" id="dpar">${deptOpts(null,'— قسم رئيسي —')}</select></label>
+   <div class="row" style="flex-wrap:nowrap"><input name="name" required placeholder="اسم القسم" style="flex:1"><button class="btn">إضافة</button></div></form>
 
   <h2>العطل الرسمية</h2><div class="card list">${(hol||[]).map(h=>`<div class="item"><div><div class="t">${esc(h.name)}</div><div class="small muted">${fmtDate(h.holiday_date)}</div></div>${del('holidays','holiday_date',h.holiday_date)}</div>`).join('')||'<div class="empty">ما فيه عطل مضافة</div>'}</div>
   <form id="hf" class="grid2" style="margin-top:10px"><input type="date" name="holiday_date" required><input name="name" required placeholder="اليوم الوطني"><button class="btn" style="grid-column:1/-1">إضافة عطلة</button></form>
@@ -689,7 +699,14 @@ async function aSet(box,re){
   box.querySelectorAll('[data-eb]').forEach(b=>b.onclick=()=>branchSheet(S.branches.find(x=>x.id===b.dataset.eb),after));
   $('#sf').onsubmit=async e=>{e.preventDefault();const f=form(e.target);f.grace_minutes=Number(f.grace_minutes||0);f.work_days=[...e.target.querySelectorAll('[data-wd]:checked')].map(c=>Number(c.dataset.wd));
     const {error}=await sb.from('shifts').insert(f);if(!fail(error))after('تمت إضافة الوردية')};
-  $('#df').onsubmit=async e=>{e.preventDefault();const {error}=await sb.from('departments').insert(form(e.target));if(!fail(error))after('تمت إضافة القسم')};
+  $('#df').onsubmit=async e=>{e.preventDefault();const f=form(e.target);f.name=(f.name||'').trim();if(!f.name)return;const {error}=await sb.from('departments').insert(f);if(!fail(error))after('تمت إضافة القسم')};
+  box.querySelectorAll('[data-dsub]').forEach(b=>b.onclick=()=>{const p=$('#dpar');p.value=b.dataset.dsub;p.closest('form').scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>p.closest('form').querySelector('[name=name]').focus(),300)});
+  box.querySelectorAll('[data-dren]').forEach(b=>b.onclick=()=>{const d=S.departments.find(x=>x.id===b.dataset.dren);const bad=deptDesc(d.id);
+    sheet(`<form id="drf" class="stack"><h3>تعديل القسم</h3><label class="f">الاسم<input name="name" required value="${esc(d.name)}"></label>
+      <label class="f">تابع لـ<select name="parent_id">${deptOpts(d.parent_id,'— قسم رئيسي —').replace(new RegExp('<option value="('+bad.join('|')+')"[^>]*>[^<]*</option>','g'),'')}</select></label>
+      <div class="row"><button class="btn" style="flex:1">حفظ</button><button type="button" class="btn ghost" id="drx">إلغاء</button></div></form>`,
+    (el,close)=>{el.querySelector('#drx').onclick=close;el.querySelector('#drf').onsubmit=async e=>{e.preventDefault();const f=form(e.target);
+      const {error}=await sb.from('departments').update(f).eq('id',d.id);if(fail(error))return;close();after('تم حفظ القسم')}})});
   $('#hf').onsubmit=async e=>{e.preventDefault();const {error}=await sb.from('holidays').insert(form(e.target));if(!fail(error))after('تمت إضافة العطلة')};
   const ex=()=>{const d=+$('#g_days').value||30,lam=+$('#g_lam').value||0,mul=+$('#g_mul').value||0,day=6000/d,hr=day/8;
     $('#g_ex').innerHTML=`<b>مثال:</b> موظف راتبه 6,000 ودوامه 8 ساعات ← أجر اليوم ${money(day)} والساعة ${money(hr)} ريال.<br>
