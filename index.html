@@ -199,7 +199,7 @@ function deptTree(pid=null,depth=0,out=[]){for(const d of deptKids(pid)){out.pus
   if(pid===null){const seen=new Set(out.map(x=>x.id));S.departments.filter(d=>!seen.has(d.id)).forEach(d=>out.push({...d,depth:0}))}return out}
 function deptPath(id){const parts=[];let d=S.departments.find(x=>x.id===id),guard=0;while(d&&guard++<20){parts.unshift(d.name);d=S.departments.find(x=>x.id===d.parent_id)}return parts.join(' › ')}
 function deptDesc(id){const ids=[id];for(let i=0;i<ids.length;i++)S.departments.filter(d=>d.parent_id===ids[i]).forEach(d=>ids.push(d.id));return ids}
-const deptOpts=(sel,empty='— اختر —')=>`<option value="">${empty}</option>`+deptTree().map(d=>`<option value="${d.id}" ${d.id===sel?'selected':''}>${'\u00A0\u00A0\u00A0'.repeat(d.depth)}${d.depth?'↳ ':''}${esc(d.name)}</option>`).join('');
+const deptOpts=(sel,empty='— اختر —')=>`<option value="">${empty}</option>`+deptTree().map(d=>`<option value="${d.id}" ${d.id===sel?'selected':''}>${esc(deptPath(d.id))}</option>`).join('');
 
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind==='bad'?' bad':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),kind==='bad'?4500:2600)}
 function fail(error){if(error){toast(error.message||'حدث خطأ','bad');return true}return false}
